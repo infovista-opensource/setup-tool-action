@@ -94,6 +94,7 @@ async function download(releaseConfig: ReleaseConfig): Promise<string> {
       core.info("Downloading without extraction");
       const tmpDir = path.join(os.homedir(), "tmp", Math.random().toString(36).slice(2));
       const dest = path.join(tmpDir, tool.name);
+      core.info(`downloading to ${dest}`);
       await tc.downloadTool(url, dest, auth, headers);
       core.debug(`chmod 755 ${dest}`);
       fs.chmodSync(dest, "755");
@@ -102,13 +103,16 @@ async function download(releaseConfig: ReleaseConfig): Promise<string> {
       return ret
     }
 
+    core.info("Downloading with archive extraction")
     const archivePath = await tc.downloadTool(
       url,
       undefined, // dest
       auth,
       headers
     );
+    core.debug(`archivePath=${archivePath}`);
     const archiveDest = path.join(os.homedir(), "tmp", Math.random().toString(36).slice(2));
+    core.debug(`archiveDest=${archiveDest}`);
     const extracted = await extract(archivePath, archiveDest);
     const releaseFolder = subdir ? path.join(extracted, subdir) : extracted;
     const ret = await tc.cacheDir(releaseFolder, tool.name, tool.version, tool.arch);
