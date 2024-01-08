@@ -92,12 +92,14 @@ async function download(releaseConfig: ReleaseConfig): Promise<string> {
   return core.group(`Downloading ${tool.name} from ${url}`, async () => {
     if (!extract) {
       core.info("Downloading without extraction");
-      const tmp = path.join(os.homedir(), "tmp", tool.name);
-      const dest = path.join(tmp, tool.name);
+      const tmpDir = path.join(os.homedir(), "tmp", Math.random().toString(36).slice(2));
+      const dest = path.join(tmpDir, tool.name);
       await tc.downloadTool(url, dest, auth, headers);
       core.debug(`chmod 755 ${dest}`);
       fs.chmodSync(dest, "755");
-      return await tc.cacheDir(tmp, tool.name, tool.version, tool.arch);
+      const ret = await tc.cacheDir(tmpDir, tool.name, tool.version, tool.arch);
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      return ret
     }
 
     const archivePath = await tc.downloadTool(
@@ -106,10 +108,13 @@ async function download(releaseConfig: ReleaseConfig): Promise<string> {
       auth,
       headers
     );
-    const archiveDest = path.join(os.homedir(), "tmp");
+    const archiveDest = path.join(os.homedir(), "tmp", Math.random().toString(36).slice(2));
     const extracted = await extract(archivePath, archiveDest);
     const releaseFolder = subdir ? path.join(extracted, subdir) : extracted;
-    return await tc.cacheDir(releaseFolder, tool.name, tool.version, tool.arch);
+    const ret = await tc.cacheDir(releaseFolder, tool.name, tool.version, tool.arch);
+    fs.rmSync(archiveDest, { recursive: true, force: true });
+    fs.rmSync(archivePath, { recursive: true, force: true });
+    return ret
   });
 }
 
