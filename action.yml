@@ -46,14 +46,14 @@ inputs:
   url-x64:           { description: "url when arch==x64" }
   url-darwin-x64:    { description: "url when platform==darwin and arch==x64" }
   url-linux-x64:     { description: "url when platform==linux and arch==x64" }
-  url-win32-x64:     { description: "url when platform==win33 and arch==x64" }
+  url-win32-x64:     { description: "url when platform==win32 and arch==x64" }
   subdir-darwin:     { description: "subdir when platform==darwin" }
   subdir-linux:      { description: "subdir when platform==linux" }
   subdir-win32:      { description: "subdir when platform==win32" }
   subdir-x64:        { description: "subdir when arch==x64" }
   subdir-darwin-x64: { description: "subdir when platform==darwin and arch==x64" }
   subdir-linux-x64:  { description: "subdir when platform==linux and arch==x64" }
-  subdir-win32-x64:  { description: "subdir when platform==win33 and arch==x64" }
+  subdir-win32-x64:  { description: "subdir when platform==win32 and arch==x64" }
   os-darwin:         { description: "{os} to use when platform==darwin" }
   os-linux:          { description: "{os} to use when platform==linux" }
   os-win32:          { description: "{os} to use when platform==win32" }
@@ -74,7 +74,7 @@ inputs:
   ext-x64:           { description: "{ext} to use when arch==x64" }
   ext-darwin-x64:    { description: "{ext} to use when platform==darwin and arch==x64" }
   ext-linux-x64:     { description: "{ext} to use when platform==linux and arch==x64" }
-  ext-win32-x64:     { description: "{ext} to use when platform==win33 and arch==x64" }
+  ext-win32-x64:     { description: "{ext} to use when platform==win32 and arch==x64" }
 
   github-token:
     description: |
@@ -83,6 +83,9 @@ inputs:
 
       https://docs.github.com/en/rest/releases/assets?apiVersion=2022-11-28#get-a-release-asset
 
+  target-dir:
+    description: |
+      If present, the directory where the tool will be stored instead of being added to the tool cache.
 outputs: {}
 
 runs:

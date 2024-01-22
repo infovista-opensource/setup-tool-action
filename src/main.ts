@@ -28,6 +28,7 @@ interface ToolConfig {
   name: string;
   version: string;
   arch: Arch;
+  targetDir: string | null;
 }
 
 interface ArchiveConfig {
@@ -53,19 +54,19 @@ function mkReleaseConfig(platform: Platform, osArch: Arch): ReleaseConfig {
     ext,
     noExtract,
     githubToken,
+    targetDir
   } = getInputs(platform, osArch, core);
 
   const templateVars = { name, version, os, arch, ext };
   const url = interpolate(urlTemplate, templateVars);
-  const subdir = subdirTemplate
-    ? interpolate(subdirTemplate, templateVars)
-    : null;
+  const subdir = subdirTemplate ? interpolate(subdirTemplate, templateVars) : null;
 
   return {
     tool: {
       name,
       version,
       arch: osArch,
+      targetDir: targetDir,
     },
     archive: {
       url,
@@ -79,12 +80,9 @@ function mkReleaseConfig(platform: Platform, osArch: Arch): ReleaseConfig {
 async function download(releaseConfig: ReleaseConfig): Promise<string> {
   const { tool, archive, githubToken } = releaseConfig;
   const { subdir, extract } = archive;
-  const containerID = process.env.CONTAINER_ID
-  const inContainer: boolean = containerID !== undefined;
 
   core.debug(`url: ${archive.url}`);
   core.debug(`github-token ${githubToken ? "present" : "not present"}`);
-  core.debug(`in container: ${inContainer} containerID=${containerID}`);
 
   const { url, auth, headers } = githubToken
     ? await core.group("Handling as private GitHub URL", async () => {
@@ -96,14 +94,17 @@ async function download(releaseConfig: ReleaseConfig): Promise<string> {
     in container-driven jobs, to avoid file ownership issues on self-hosted runners,
     save directly the binary to ~/.local/bin (that will be added to $PATH)
   */
+  const useToolCache:boolean = (tool.targetDir === undefined) || (tool.targetDir == null)
   var destDir: string;
-  if (inContainer) {
-    destDir = path.join(os.homedir(), ".local", "bin");
+  if (useToolCache) {
+    core.info(`Setting up ${tool.name}/${tool.arch}@${tool.version} in tool cache`);
+    destDir = path.join(os.homedir(), "tmp", Math.random().toString(36).slice(2) );
+  } else {
+    core.info(`Setting up ${tool.name}/${tool.arch}@${tool.version} in dir=${tool.targetDir}`);
+    destDir = tool.targetDir || path.join(os.homedir(), "local", "bin");
     if (!fs.existsSync(destDir)) {
       fs.mkdirSync(destDir, { recursive: true });
     }
-  } else {
-    destDir = path.join(os.homedir(), "tmp", Math.random().toString(36).slice(2) );
   }
   return core.group(`Downloading ${tool.name} from ${url}`, async () => {
     // directly download executable
@@ -113,7 +114,7 @@ async function download(releaseConfig: ReleaseConfig): Promise<string> {
       await tc.downloadTool(url, dest, auth, headers);
       core.debug(`setting executable flag to ${dest}`);
       fs.chmodSync(dest, "755");
-      if (!inContainer) {
+      if (useToolCache) {
         // let tool-cache do its job
         core.debug(`caching dir=${destDir} tool=${tool.name} v=${tool.version} arch=${tool.arch}`);
         const ret = await tc.cacheDir(destDir, tool.name, tool.version, tool.arch);
@@ -134,7 +135,7 @@ async function download(releaseConfig: ReleaseConfig): Promise<string> {
     const extracted = await extract(archivePath, archiveDest);
     const releaseFolder = subdir ? path.join(extracted, subdir) : extracted;
     core.debug(`releaseFolder=${archiveDest}`);
-    if (inContainer) {
+    if (!useToolCache) {
       // in container, just copy the extracted directory to the final destination
       core.debug(`copying ${archiveDest} to ${destDir}`);
       fs.cpSync(releaseFolder, destDir);
