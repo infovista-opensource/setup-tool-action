@@ -94,6 +94,7 @@ async function download(releaseConfig: ReleaseConfig): Promise<string> {
     in container-driven jobs, to avoid file ownership issues on self-hosted runners,
     save directly the binary to ~/.local/bin (that will be added to $PATH)
   */
+  core.debug(`initial targetDir: ${tool.targetDir}`);
   const useToolCache:boolean = (tool.targetDir === undefined) || (tool.targetDir == null)
   var destDir: string;
   if (useToolCache) {
