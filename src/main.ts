@@ -79,9 +79,11 @@ function mkReleaseConfig(platform: Platform, osArch: Arch): ReleaseConfig {
 async function download(releaseConfig: ReleaseConfig): Promise<string> {
   const { tool, archive, githubToken } = releaseConfig;
   const { subdir, extract } = archive;
+  const inContainer: boolean = process.env.CONTAINER_ID != undefined;
 
   core.debug(`url: ${archive.url}`);
   core.debug(`github-token ${githubToken ? "present" : "not present"}`);
+  core.debug(`in container: ${inContainer}`);
 
   const { url, auth, headers } = githubToken
     ? await core.group("Handling as private GitHub URL", async () => {
@@ -89,36 +91,72 @@ async function download(releaseConfig: ReleaseConfig): Promise<string> {
       })
     : { url: archive.url, auth: undefined, headers: undefined };
 
-  return core.group(`Downloading ${tool.name} from ${url}`, async () => {
-    if (!extract) {
-      core.info("Downloading without extraction");
-      const tmpDir = path.join(os.homedir(), "tmp", Math.random().toString(36).slice(2));
-      const dest = path.join(tmpDir, tool.name);
-      core.info(`downloading to ${dest}`);
-      await tc.downloadTool(url, dest, auth, headers);
-      core.debug(`chmod 755 ${dest}`);
-      fs.chmodSync(dest, "755");
-      const ret = await tc.cacheDir(tmpDir, tool.name, tool.version, tool.arch);
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      return ret
+  /*
+    in container-driven jobs, to avoid file ownership issues on self-hosted runners,
+    save directly the binary to ~/.local/bin (that will be added to $PATH)
+  */
+  var dest: string;
+  var tmpDir: string;
+  if (inContainer) {
+    dest = path.join(os.homedir(), ".local", "bin");
+    if (!fs.existsSync(dest)) {
+      fs.mkdirSync(dest, { recursive: true });
     }
-
-    core.info("Downloading with archive extraction")
-    const archivePath = await tc.downloadTool(
-      url,
-      undefined, // dest
-      auth,
-      headers
+  } else {
+    tmpDir = path.join(
+      os.homedir(),
+      "tmp",
+      Math.random().toString(36).slice(2)
     );
+    dest = path.join(tmpDir, tool.name);
+  }
+  return core.group(`Downloading ${tool.name} from ${url}`, async () => {
+    // directly download executable
+    if (!extract) {
+      core.info(`Downloading without extraction to ${dest}`);
+      await tc.downloadTool(url, dest, auth, headers);
+      core.debug(`setting executable flag to ${dest}`);
+      fs.chmodSync(dest, "755");
+      if (!inContainer) {
+        // let tool-cache do its job
+        const ret = await tc.cacheDir(dest, tool.name, tool.version, tool.arch);
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+        return ret;
+      } else {
+        // the file is already in the target dir, just return it
+        return Promise.resolve(path.join(dest, tool.name));
+      }
+    }
+    // download archive and get tool inside it
+    core.info("Downloading with archive extraction");
+    const archivePath = await tc.downloadTool(url, undefined, auth, headers); // dest=undefined creates tempdir for download
     core.debug(`archivePath=${archivePath}`);
-    const archiveDest = path.join(os.homedir(), "tmp", Math.random().toString(36).slice(2));
+    const archiveDest = path.join(
+      os.homedir(),
+      "tmp",
+      Math.random().toString(36).slice(2)
+    );
     core.debug(`archiveDest=${archiveDest}`);
     const extracted = await extract(archivePath, archiveDest);
     const releaseFolder = subdir ? path.join(extracted, subdir) : extracted;
-    const ret = await tc.cacheDir(releaseFolder, tool.name, tool.version, tool.arch);
-    fs.rmSync(archiveDest, { recursive: true, force: true });
-    fs.rmSync(archivePath, { recursive: true, force: true });
-    return ret
+    if (inContainer) {
+      // in container, just copy the extracted directory to the final destination
+      fs.cpSync(releaseFolder, dest);
+      fs.rmSync(archiveDest, { recursive: true, force: true });
+      fs.rmSync(archivePath, { recursive: true, force: true });
+      return Promise.resolve(path.join(dest, tool.name));
+    } else {
+      // non-container: tool-ize the extracted directory
+      const ret = await tc.cacheDir(
+        releaseFolder,
+        tool.name,
+        tool.version,
+        tool.arch
+      );
+      fs.rmSync(archiveDest, { recursive: true, force: true });
+      fs.rmSync(archivePath, { recursive: true, force: true });
+      return ret;
+    }
   });
 }
 

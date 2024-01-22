@@ -76,19 +76,23 @@ jobs:
       - if: ${{ matrix.runner == 'ubuntu-latest' }}
         run: bluebook --help
 
-      #
-      # Random example from Freckle, that's a private repo. TODO: skip in
-      # forks.
-      #
-
-      - if: ${{ matrix.runner == 'ubuntu-latest' }}
-        uses: ./
+  containerized-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        image:
+          - library/alpine:3
+          - library/debian:12
+      fail-fast: false
+    container:
+      image: ${{ matrix.image }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./
         with:
-          name: platform
-          version: 2.4.0.2
-          url: 'https://github.com/freckle/{name}/releases/download/v{version}/{name}-{arch}-{os}.{ext}'
-          github-token: ${{ secrets.PLATFORM_GITHUB_TOKEN }}
+          name: 'hlint'
+          version: '3.5'
+          url: 'https://github.com/ndmitchell/{name}/releases/download/v{version}/{name}-{version}-{arch}-{os}.{ext}'
+          subdir: '{name}-{version}'
           arch: x86_64
-          subdir: '{name}'
-      - if: ${{ matrix.runner == 'ubuntu-latest' }}
-        run: platform version
+      - run: hlint --version
