@@ -105,6 +105,8 @@ async function download(releaseConfig: ReleaseConfig): Promise<string> {
     if (!fs.existsSync(destDir)) {
       fs.mkdirSync(destDir, { recursive: true });
     }
+    core.debug(`adding ${destDir} to $PATH`);
+    core.addPath(destDir);
   }
   return core.group(`Downloading ${tool.name} from ${url}`, async () => {
     // directly download executable
