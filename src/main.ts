@@ -6,6 +6,8 @@ import * as path from "path";
 import * as github from "./github";
 import { interpolate } from "./interpolate";
 import { type Platform, type Arch, getInputs } from "./inputs";
+import untildify from "untildify";
+import { isPost } from './state'
 
 type PkgExtension = "tar.gz" | "zip" | "7z" | "xar";
 
@@ -28,6 +30,7 @@ interface ToolConfig {
   name: string;
   version: string;
   arch: Arch;
+  targetDir: string | null;
 }
 
 interface ArchiveConfig {
@@ -53,19 +56,19 @@ function mkReleaseConfig(platform: Platform, osArch: Arch): ReleaseConfig {
     ext,
     noExtract,
     githubToken,
+    targetDir
   } = getInputs(platform, osArch, core);
 
   const templateVars = { name, version, os, arch, ext };
   const url = interpolate(urlTemplate, templateVars);
-  const subdir = subdirTemplate
-    ? interpolate(subdirTemplate, templateVars)
-    : null;
+  const subdir = subdirTemplate ? interpolate(subdirTemplate, templateVars) : null;
 
   return {
     tool: {
       name,
       version,
       arch: osArch,
+      targetDir: targetDir,
     },
     archive: {
       url,
@@ -89,36 +92,76 @@ async function download(releaseConfig: ReleaseConfig): Promise<string> {
       })
     : { url: archive.url, auth: undefined, headers: undefined };
 
-  return core.group(`Downloading ${tool.name} from ${url}`, async () => {
-    if (!extract) {
-      core.info("Downloading without extraction");
-      const tmpDir = path.join(os.homedir(), "tmp", Math.random().toString(36).slice(2));
-      const dest = path.join(tmpDir, tool.name);
-      core.info(`downloading to ${dest}`);
-      await tc.downloadTool(url, dest, auth, headers);
-      core.debug(`chmod 755 ${dest}`);
-      fs.chmodSync(dest, "755");
-      const ret = await tc.cacheDir(tmpDir, tool.name, tool.version, tool.arch);
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-      return ret
+  /*
+    in container-driven jobs, to avoid file ownership issues on self-hosted runners,
+    save directly the binary to ~/.local/bin (that will be added to $PATH)
+  */
+  core.debug(`initial targetDir: ${tool.targetDir}`);
+  const useToolCache:boolean = (tool.targetDir === undefined) || (tool.targetDir == null) || (tool.targetDir === "");
+  var destDir: string;
+  if (useToolCache) {
+    core.info(`Setting up ${tool.name}/${tool.arch}@${tool.version} in tool cache`);
+    destDir = path.join(os.homedir(), "tmp", Math.random().toString(36).slice(2) );
+  } else {
+    core.info(`Setting up ${tool.name}/${tool.arch}@${tool.version} in dir=${tool.targetDir}`);
+    destDir = tool.targetDir || path.join(os.homedir(), "local", "bin");
+    destDir = path.resolve(untildify(destDir));
+    if (!fs.existsSync(destDir)) {
+      core.debug(`creating target directory ${destDir}`);
+      fs.mkdirSync(destDir, { recursive: true });
     }
-
-    core.info("Downloading with archive extraction")
-    const archivePath = await tc.downloadTool(
-      url,
-      undefined, // dest
-      auth,
-      headers
-    );
-    core.debug(`archivePath=${archivePath}`);
+    core.debug(`adding ${destDir} to $PATH`);
+    core.addPath(destDir);
+  }
+  return core.group(`Downloading ${tool.name} from ${url}`, async () => {
+    // directly download executable
+    if (!extract) {
+      const dest = path.join(destDir, tool.name)
+      core.info(`Downloading without extraction to ${dest}`);
+      await tc.downloadTool(url, dest, auth, headers);
+      core.debug(`setting executable flag to ${dest}`);
+      fs.chmodSync(dest, "755");
+      if (useToolCache) {
+        // let tool-cache do its job
+        core.debug(`caching dir=${destDir} tool=${tool.name} v=${tool.version} arch=${tool.arch}`);
+        const ret = await tc.cacheDir(destDir, tool.name, tool.version, tool.arch);
+        core.debug(`removing ${destDir}`)
+        fs.rmSync(destDir, { recursive: true, force: true });
+        return ret;
+      } else {
+        // the file is already in the target dir, just return it
+        return Promise.resolve(dest);
+      }
+    }
+    // download archive and get tool inside it
+    core.info("Downloading with archive extraction");
+    const archivePath = await tc.downloadTool(url, undefined, auth, headers); // dest=undefined creates tempdir for download
+    core.debug(`downloaded to archivePath=${archivePath}`);
     const archiveDest = path.join(os.homedir(), "tmp", Math.random().toString(36).slice(2));
-    core.debug(`archiveDest=${archiveDest}`);
+    core.debug(`extracting to archiveDest=${archiveDest}`);
     const extracted = await extract(archivePath, archiveDest);
     const releaseFolder = subdir ? path.join(extracted, subdir) : extracted;
-    const ret = await tc.cacheDir(releaseFolder, tool.name, tool.version, tool.arch);
-    fs.rmSync(archiveDest, { recursive: true, force: true });
-    fs.rmSync(archivePath, { recursive: true, force: true });
-    return ret
+    core.debug(`releaseFolder=${archiveDest}`);
+    if (!useToolCache) {
+      // in container, just copy the extracted directory to the final destination
+      const destFile = path.join(destDir, tool.name);
+      core.debug(`copying ${releaseFolder}/${tool.name} to ${destFile}`);
+      fs.cpSync(path.join(releaseFolder, tool.name), destFile);
+      core.debug(`removing ${archiveDest}`)
+      fs.rmSync(archiveDest, { recursive: true, force: true });
+      core.debug(`removing ${archivePath}`)
+      fs.rmSync(archivePath, { recursive: true, force: true });
+      return Promise.resolve(destFile);
+    } else {
+      // non-container: tool-ize the extracted directory
+      core.debug(`caching dir=${releaseFolder} tool=${tool.name} v=${tool.version} arch=${tool.arch}`);
+      const ret = await tc.cacheDir(releaseFolder, tool.name, tool.version, tool.arch );
+      core.debug(`removing ${archiveDest}`)
+      fs.rmSync(archiveDest, { recursive: true, force: true });
+      core.debug(`removing ${archivePath}`)
+      fs.rmSync(archivePath, { recursive: true, force: true });
+      return ret;
+    }
   });
 }
 
@@ -131,7 +174,7 @@ async function findOrDownload(releaseConfig: ReleaseConfig): Promise<string> {
     core.debug(`Found cached ${tool.name} at ${existingDir}`);
     return existingDir;
   } else {
-    core.debug(`${tool.name} not cached, so attempting to download`);
+    core.debug(`${tool.name} not cached, so attempting to download from ${url}`);
     return await download(releaseConfig);
   }
 }
@@ -140,13 +183,29 @@ async function run() {
   try {
     const config = mkReleaseConfig(process.platform, process.arch as Arch);
     const dir = await findOrDownload(config);
+    core.debug(`adding ${dir} to path`);
     core.addPath(dir);
-    core.info(
-      `${config.tool.name} ${config.tool.version} is now set up at ${dir}`
-    );
+    core.info(`${config.tool.name} ${config.tool.version} is now set up at ${dir}`);
   } catch (error) {
     core.setFailed(error instanceof Error ? error : String(error));
   }
 }
 
-run();
+async function cleanup() {
+  try {
+    const config = mkReleaseConfig(process.platform, process.arch as Arch);
+    if (config.tool.targetDir) {
+      const finalDir = untildify(config.tool.targetDir);
+      core.debug(`removing ${finalDir}`);
+      fs.rmSync(finalDir, { recursive: true, force: true });
+    }
+  } catch (error) {
+    core.setFailed(error instanceof Error ? error : String(error));
+  }
+}
+
+if (!isPost) {
+  run()
+} else {
+  cleanup()
+}

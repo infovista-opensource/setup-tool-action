@@ -1,0 +1,81 @@
+name: testing
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  standard-tests:
+    runs-on: [self-hosted, linux, small]
+    steps:
+      - uses: infovista/actions/checkout@main
+      - name: install helm
+        uses: ./
+        with:
+          name: helm
+          version: v3.13.0-rc.1
+          arch: arm64
+          subdir: '{os}-{arch}'
+          arch-x64: amd64
+          ext: tar.gz
+          url: https://get.helm.sh/{name}-{version}-{os}-{arch}.{ext}
+      - name: verify helm
+        shell: sh
+        run: |
+          echo "helm is `which helm`"
+          helm version
+      - name: install JQ if not present
+        uses: ./
+        with:
+            name: jq
+            version: '1.7rc2'
+            arch-x64: amd64
+            arch: arm64
+            url: https://github.com/jqlang/jq/releases/download/{name}-{version}/{name}-{os}-{arch}
+            no-extract: true
+      - name: verify jq
+        shell: sh
+        run: |
+          which jq
+          jq --version
+
+  containerized-tests:
+    runs-on: [self-hosted, linux, small, docker]
+    container:
+      image: alpine:3
+    steps:
+      - if: ${{ env.ACT || false }}
+        name: Hack container for local development
+        run: |
+          apk add -U curl wget nodejs
+      - uses: infovista/actions/checkout@main
+      - name: install helm
+        uses: ./
+        with:
+          name: helm
+          version: v3.14.0-rc.1
+          arch-x64: amd64
+          arch: arm64
+          subdir: '{os}-{arch}'
+          ext: tar.gz
+          url: https://get.helm.sh/{name}-{version}-{os}-{arch}.{ext}
+          target-dir: ~/.local/bin
+      - name: verify helm
+        shell: sh
+        run: |
+          echo "helm location: `which helm`"
+          helm version
+      - name: install JQ if not present
+        uses: ./
+        with:
+            name: jq
+            version: '1.7rc2'
+            arch-x64: amd64
+            arch: arm64
+            url: https://github.com/jqlang/jq/releases/download/{name}-{version}/{name}-{os}-{arch}
+            no-extract: true
+            target-dir: ${{ github.workspace }}/.localbin
+      - name: verify tool
+        shell: sh
+        run: |
+          echo "tool location: `which jq`"
+          jq --version
