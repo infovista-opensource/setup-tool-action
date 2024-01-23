@@ -7,6 +7,7 @@ import * as github from "./github";
 import { interpolate } from "./interpolate";
 import { type Platform, type Arch, getInputs } from "./inputs";
 import untildify from "untildify";
+import { isPost } from './state'
 
 type PkgExtension = "tar.gz" | "zip" | "7z" | "xar";
 
@@ -190,4 +191,21 @@ async function run() {
   }
 }
 
-run();
+async function cleanup() {
+  try {
+    const config = mkReleaseConfig(process.platform, process.arch as Arch);
+    if (config.tool.targetDir) {
+      const finalDir = untildify(config.tool.targetDir);
+      core.debug(`removing ${finalDir}`);
+      fs.rmSync(finalDir, { recursive: true, force: true });
+    }
+  } catch (error) {
+    core.setFailed(error instanceof Error ? error : String(error));
+  }
+}
+
+if (!isPost) {
+  run()
+} else {
+  cleanup()
+}
