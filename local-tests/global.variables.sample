@@ -1,0 +1,2 @@
+ACT=true
+NEXUS_DOCKER_MIRROR=repo.xx.com:5000
