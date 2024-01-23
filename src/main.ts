@@ -6,6 +6,7 @@ import * as path from "path";
 import * as github from "./github";
 import { interpolate } from "./interpolate";
 import { type Platform, type Arch, getInputs } from "./inputs";
+import untildify from "untildify";
 
 type PkgExtension = "tar.gz" | "zip" | "7z" | "xar";
 
@@ -95,7 +96,7 @@ async function download(releaseConfig: ReleaseConfig): Promise<string> {
     save directly the binary to ~/.local/bin (that will be added to $PATH)
   */
   core.debug(`initial targetDir: ${tool.targetDir}`);
-  const useToolCache:boolean = (tool.targetDir === undefined) || (tool.targetDir == null)
+  const useToolCache:boolean = (tool.targetDir === undefined) || (tool.targetDir == null) || (tool.targetDir === "");
   var destDir: string;
   if (useToolCache) {
     core.info(`Setting up ${tool.name}/${tool.arch}@${tool.version} in tool cache`);
@@ -103,7 +104,9 @@ async function download(releaseConfig: ReleaseConfig): Promise<string> {
   } else {
     core.info(`Setting up ${tool.name}/${tool.arch}@${tool.version} in dir=${tool.targetDir}`);
     destDir = tool.targetDir || path.join(os.homedir(), "local", "bin");
+    destDir = path.resolve(untildify(destDir));
     if (!fs.existsSync(destDir)) {
+      core.debug(`creating target directory ${destDir}`);
       fs.mkdirSync(destDir, { recursive: true });
     }
     core.debug(`adding ${destDir} to $PATH`);
@@ -140,13 +143,14 @@ async function download(releaseConfig: ReleaseConfig): Promise<string> {
     core.debug(`releaseFolder=${archiveDest}`);
     if (!useToolCache) {
       // in container, just copy the extracted directory to the final destination
-      core.debug(`copying ${archiveDest} to ${destDir}`);
-      fs.cpSync(releaseFolder, destDir);
+      const destFile = path.join(destDir, tool.name);
+      core.debug(`copying ${releaseFolder}/${tool.name} to ${destFile}`);
+      fs.cpSync(path.join(releaseFolder, tool.name), destFile);
       core.debug(`removing ${archiveDest}`)
       fs.rmSync(archiveDest, { recursive: true, force: true });
       core.debug(`removing ${archivePath}`)
       fs.rmSync(archivePath, { recursive: true, force: true });
-      return Promise.resolve(path.join(destDir, tool.name));
+      return Promise.resolve(destFile);
     } else {
       // non-container: tool-ize the extracted directory
       core.debug(`caching dir=${releaseFolder} tool=${tool.name} v=${tool.version} arch=${tool.arch}`);
