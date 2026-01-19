@@ -165,18 +165,47 @@ async function download(releaseConfig: ReleaseConfig): Promise<string> {
   });
 }
 
+function findBinaryInDirectory(dir: string, binaryName: string): string | null {
+  // First check if binary is at root level
+  const rootPath = path.join(dir, binaryName);
+  if (fs.existsSync(rootPath) && fs.statSync(rootPath).isFile()) {
+    return dir;
+  }
+
+  // Search subdirectories recursively
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        const subDir = path.join(dir, entry.name);
+        const found = findBinaryInDirectory(subDir, binaryName);
+        if (found) {
+          return found;
+        }
+      }
+    }
+  } catch (e) {
+    core.warning(`Error searching directory ${dir}: ${e}`);
+  }
+
+  return null;
+}
+
 async function findOrDownload(releaseConfig: ReleaseConfig): Promise<string> {
   const { tool, archive } = releaseConfig;
   const { url } = archive;
-  const existingDir = await tc.find(tool.name, tool.version, tool.arch);
+  let existingDir: string | null = await tc.find(tool.name, tool.version, tool.arch);
 
   if (existingDir) {
     core.debug(`Found cached ${tool.name} at ${existingDir}`);
-    return existingDir;
-  } else {
-    core.debug(`${tool.name} not cached, so attempting to download from ${url}`);
-    return await download(releaseConfig);
+    existingDir = findBinaryInDirectory(existingDir, tool.name);
+    if (existingDir) {
+      return existingDir;
+    }
   }
+  
+  core.debug(`${tool.name} not cached, so attempting to download from ${url}`);
+  return await download(releaseConfig);
 }
 
 async function run() {
