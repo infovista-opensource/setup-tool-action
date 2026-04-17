@@ -4,15 +4,16 @@ on:
   push:
     branches:
       - main
+      - selfhosted-container-fix-node24
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
-          node-version: "16"
+          node-version: "24"
           cache: "yarn"
           cache-dependency-path: yarn.lock
       - run: yarn
@@ -30,7 +31,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
 
       - uses: ./
         with:
@@ -82,12 +83,12 @@ jobs:
       matrix:
         image:
           - library/alpine:3
-          - library/debian:12
+          - library/debian:13
       fail-fast: false
     container:
       image: ${{ matrix.image }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
       - uses: ./
         with:
           name: 'hlint'
