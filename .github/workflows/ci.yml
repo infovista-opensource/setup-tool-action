@@ -95,5 +95,7 @@ jobs:
           version: '3.5'
           url: 'https://github.com/ndmitchell/{name}/releases/download/v{version}/{name}-{version}-{arch}-{os}.{ext}'
           subdir: '{name}-{version}'
+          os-darwin: osx
+          os-win32: windows
           arch: x86_64
       - run: hlint --version
