@@ -90,7 +90,8 @@ jobs:
     steps:
       - name: Install dependencies (Alpine)
         if: ${{ matrix.image == 'library/alpine:3' }}
-        run: apk add --no-cache libffi openssl gmp zlib       
+        run: apk add --no-cache libffi openssl gmp zlib && \
+             apk add --no-cache libc6-compat
       - uses: actions/checkout@v6
       - uses: ./
         with:
