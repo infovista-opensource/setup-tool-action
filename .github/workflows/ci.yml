@@ -101,4 +101,5 @@ jobs:
           os-darwin: osx
           os-win32: windows
           arch: x86_64
+          target-dir: /usr/local/bin
       - run: hlint --version
