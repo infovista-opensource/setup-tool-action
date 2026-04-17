@@ -86,8 +86,11 @@ jobs:
           - library/debian:13
       fail-fast: false
     container:
-      image: ${{ matrix.image }}
+      image: ${{ matrix.image }}      
     steps:
+      - name: Install dependencies (Alpine)
+        if: ${{ matrix.image == 'library/alpine:3' }}
+        run: apk add --no-cache glibc libffi openssl        
       - uses: actions/checkout@v6
       - uses: ./
         with:
