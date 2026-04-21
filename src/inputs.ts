@@ -41,6 +41,7 @@ export interface Inputs {
   ext: string;
   noExtract: boolean;
   githubToken: string | null;
+  targetDir: string | null;
 }
 
 export function getInputs(
@@ -70,6 +71,7 @@ export function getInputs(
     ),
     noExtract: core.getInput("no-extract", { required: false }) === "true",
     githubToken: core.getInput("github-token", { required: false }),
+    targetDir: core.getInput("target-dir", { required: false }),
   };
 }
 
