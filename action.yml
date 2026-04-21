@@ -89,7 +89,7 @@ inputs:
 outputs: {}
 
 runs:
-  using: "node16"
+  using: "node24"
   main: "dist/index.js"
   post: "dist/index.js"
 branding:

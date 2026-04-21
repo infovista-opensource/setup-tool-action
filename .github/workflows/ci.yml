@@ -4,15 +4,16 @@ on:
   push:
     branches:
       - main
+      - selfhosted-container-fix-node24
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
-          node-version: "16"
+          node-version: "24"
           cache: "yarn"
           cache-dependency-path: yarn.lock
       - run: yarn
@@ -30,7 +31,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
 
       - uses: ./
         with:
@@ -82,17 +83,23 @@ jobs:
       matrix:
         image:
           - library/alpine:3
-          - library/debian:12
+          - library/debian:13
       fail-fast: false
     container:
-      image: ${{ matrix.image }}
+      image: ${{ matrix.image }}      
     steps:
-      - uses: actions/checkout@v3
+      - name: Install dependencies (Alpine)
+        if: ${{ matrix.image == 'library/alpine:3' }}
+        run: apk add --no-cache libffi openssl gmp zlib libc6-compat
+      - uses: actions/checkout@v6
       - uses: ./
         with:
           name: 'hlint'
           version: '3.5'
           url: 'https://github.com/ndmitchell/{name}/releases/download/v{version}/{name}-{version}-{arch}-{os}.{ext}'
           subdir: '{name}-{version}'
+          os-darwin: osx
+          os-win32: windows
           arch: x86_64
+          target-dir: /usr/local/bin
       - run: hlint --version
